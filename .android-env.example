@@ -1,0 +1,24 @@
+# Copy this file to .android-env and adjust values for your project.
+
+# Absolute path to your Android Gradle project. If empty, ./android tries to
+# detect the project from your current working directory.
+PROJECT_DIR=
+
+# App module name.
+APP_MODULE=app
+
+# Build variant name as Gradle expects it.
+BUILD_VARIANT=Debug
+
+# Optional: lock commands to one physical device.
+ADB_SERIAL=
+
+# Optional: explicit adb path if autodetection is wrong.
+ADB_BIN=
+
+# Optional: package name for ./android launch
+APP_ID=
+
+# Optional: specific launch activity for ./android launch
+# Example: .MainActivity or com.example.app.MainActivity
+LAUNCH_ACTIVITY=
