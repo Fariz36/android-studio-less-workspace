@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/android_common.sh"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./android [global-options] <command> [command-args]
+
+Global options:
+  --project DIR      Android project root
+  --module NAME      App module name (default: app)
+  --variant NAME     Build variant (default: Debug)
+  --serial ID        adb device serial
+  --adb-bin PATH     explicit adb/adb.exe path
+  --app-id ID        Android application id/package
+  --activity NAME    Launch activity, e.g. .MainActivity
+  -h, --help         Show this help
+
+Commands:
+  doctor             Show detected tools and current config
+  devices            Show adb devices
+  tasks              Show Gradle tasks
+  build              Build the selected variant
+  install            Install selected variant on device
+  launch             Launch app on device
+  logs [filter]      Open logcat, optionally filtered
+  clean              Run Gradle clean
+  apk-path           Print the detected APK path for the variant
+
+Examples:
+  ./android --project ~/code/MyApp doctor
+  ./android --project ~/code/MyApp build
+  ./android --project ~/code/MyApp --serial 2a8df356 install
+  ./android --project ~/code/MyApp --app-id com.example.app launch
+EOF
+}
+
+COMMAND_ARGS=()
+
+parse_args() {
+  while (($#)); do
+    case "$1" in
+      --project)
+        CLI_PROJECT_DIR="${2:-}"
+        shift 2
+        ;;
+      --module)
+        CLI_APP_MODULE="${2:-}"
+        shift 2
+        ;;
+      --variant)
+        CLI_BUILD_VARIANT="${2:-}"
+        shift 2
+        ;;
+      --serial)
+        CLI_ADB_SERIAL="${2:-}"
+        shift 2
+        ;;
+      --adb-bin)
+        CLI_ADB_BIN="${2:-}"
+        shift 2
+        ;;
+      --app-id)
+        CLI_APP_ID="${2:-}"
+        shift 2
+        ;;
+      --activity)
+        CLI_LAUNCH_ACTIVITY="${2:-}"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --)
+        shift
+        COMMAND_ARGS=("$@")
+        return
+        ;;
+      *)
+        COMMAND="$1"
+        shift
+        COMMAND_ARGS=("$@")
+        return
+        ;;
+    esac
+  done
+}
+
+print_config() {
+  printf 'project_dir=%s\n' "${PROJECT_DIR:-}"
+  printf 'app_module=%s\n' "$APP_MODULE"
+  printf 'build_variant=%s\n' "$BUILD_VARIANT"
+  printf 'app_id=%s\n' "${APP_ID:-}"
+  printf 'launch_activity=%s\n' "${LAUNCH_ACTIVITY:-}"
+  printf 'adb_serial=%s\n' "${ADB_SERIAL:-}"
+  printf 'adb_bin=%s\n' "${ADB_BIN:-}"
+}
+
+cmd_doctor() {
+  local sdk_root adb_path gradle_cmd apk_path
+
+  sdk_root="$(detect_android_sdk_root || true)"
+  adb_path="$(find_adb || true)"
+  gradle_cmd="$(find_gradle_cmd || true)"
+  apk_path="$(find_apk_path || true)"
+
+  printf '== Config ==\n'
+  print_config
+  printf '\n== Tools ==\n'
+  printf 'java=%s\n' "$(command -v java || true)"
+  printf 'adb=%s\n' "$adb_path"
+  printf 'android_sdk_root=%s\n' "$sdk_root"
+  printf 'gradle=%s\n' "$gradle_cmd"
+  printf 'apktool=%s\n' "$(command -v apktool || true)"
+  printf '\n== Project ==\n'
+  if [[ -n "${PROJECT_DIR:-}" ]]; then
+    printf 'gradle_project=yes\n'
+    printf 'apk_path=%s\n' "$apk_path"
+  else
+    printf 'gradle_project=no\n'
+  fi
+
+  if [[ -n "$adb_path" ]]; then
+    local device_output
+    printf '\n== Devices ==\n'
+    if device_output="$(adb_cmd devices 2>&1)"; then
+      printf '%s\n' "$device_output"
+    else
+      warn "adb probe failed"
+      printf '%s\n' "$device_output"
+    fi
+  fi
+}
+
+cmd_devices() {
+  require_adb
+  adb_cmd devices
+}
+
+cmd_tasks() {
+  ensure_project
+  run_gradle tasks --all "${COMMAND_ARGS[@]}"
+}
+
+cmd_build() {
+  ensure_project
+  run_gradle ":$APP_MODULE:assemble$BUILD_VARIANT" "${COMMAND_ARGS[@]}"
+}
+
+cmd_install() {
+  ensure_project
+  require_adb
+
+  if run_gradle ":$APP_MODULE:install$BUILD_VARIANT" "${COMMAND_ARGS[@]}"; then
+    return
+  fi
+
+  warn "Gradle install task failed, falling back to adb install -r."
+  local apk_path
+  apk_path="$(find_apk_path)"
+  [[ -n "$apk_path" ]] || die "Could not locate APK output for variant $BUILD_VARIANT."
+  adb_cmd install -r "$apk_path"
+}
+
+cmd_launch() {
+  require_adb
+  require_app_id
+
+  if [[ -n "${LAUNCH_ACTIVITY:-}" ]]; then
+    adb_cmd shell am start -n "${APP_ID}/${LAUNCH_ACTIVITY}"
+    return
+  fi
+
+  adb_cmd shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1
+}
+
+cmd_logs() {
+  require_adb
+
+  if ((${#COMMAND_ARGS[@]} == 0)); then
+    adb_cmd logcat
+    return
+  fi
+
+  adb_cmd logcat "${COMMAND_ARGS[@]}"
+}
+
+cmd_clean() {
+  ensure_project
+  run_gradle clean "${COMMAND_ARGS[@]}"
+}
+
+cmd_apk_path() {
+  ensure_project
+  find_apk_path
+}
+
+load_android_env
+parse_args "$@"
+apply_cli_overrides
+
+if [[ -z "${COMMAND:-}" ]]; then
+  usage
+  exit 1
+fi
+
+case "$COMMAND" in
+  doctor) cmd_doctor ;;
+  devices) cmd_devices ;;
+  tasks) cmd_tasks ;;
+  build) cmd_build ;;
+  install) cmd_install ;;
+  launch) cmd_launch ;;
+  logs) cmd_logs ;;
+  clean) cmd_clean ;;
+  apk-path) cmd_apk_path ;;
+  -h|--help|help) usage ;;
+  *)
+    die "Unknown command: $COMMAND"
+    ;;
+esac
