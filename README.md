@@ -7,23 +7,47 @@ actually need day-to-day when you prefer:
 - using a physical device instead of an emulator
 - running build/install/logcat from the terminal
 
-It does not create an Android project for you. It wraps the common CLI flow for
-an existing Gradle-based Android app.
+It can now do both:
+
+- initialize a new Android project with a modern Android Studio style layout
+- wrap the common CLI flow for an existing Gradle-based Android app
 
 ## What is here
 
 - `android`: main command wrapper
 - `lib/android_common.sh`: shared detection logic
+- `lib/android_init.sh`: project generator
 - `.android-env.example`: per-project configuration template
 
 ## Expected baseline
 
 - Java installed
 - Android SDK platform-tools available somewhere in WSL or Windows
-- an Android Gradle project with `gradlew`
 - USB debugging enabled on your device
 
 ## Quick start
+
+### Create a new project
+
+```bash
+cd /home/fariz/TUGAS_ITB/mobdev/android-studio-less-workspace
+chmod +x android
+./android init ~/code/MyApp --package com.example.myapp
+cd ~/code/MyApp
+./gradlew :app:assembleDebug
+```
+
+The generated project is intentionally close to a current Android Studio Empty
+Activity setup:
+
+- Kotlin DSL
+- Gradle wrapper
+- version catalog in `gradle/libs.versions.toml`
+- one `app` module
+- Jetpack Compose entry screen
+- modern AGP 9.x built-in Kotlin flow
+
+### Work with an existing project
 
 1. Copy `.android-env.example` to `.android-env`
 2. Set `PROJECT_DIR` to your Android app root
@@ -31,7 +55,7 @@ an existing Gradle-based Android app.
 4. Run:
 
 ```bash
-cd /home/fariz/TUGAS_ITB/mobdev/fafo_setup
+cd /home/fariz/TUGAS_ITB/mobdev/android-studio-less-workspace
 chmod +x android
 ./android doctor
 ./android devices
@@ -44,6 +68,7 @@ chmod +x android
 You can also skip `.android-env` and pass values inline:
 
 ```bash
+./android init ~/code/MyApp --package com.example.myapp
 ./android --project ~/code/MyApp --serial 2a8df356 build
 ./android --project ~/code/MyApp --serial 2a8df356 install
 ./android --project ~/code/MyApp --app-id com.example.myapp launch
@@ -51,6 +76,25 @@ You can also skip `.android-env` and pass values inline:
 ```
 
 ## Commands
+
+### `init`
+
+Creates a new Android app project.
+
+Example:
+
+```bash
+./android init ~/code/MyApp --package com.example.myapp
+```
+
+Useful options:
+
+- `--app-name "My App"`
+- `--min-sdk 24`
+- `--compile-sdk 36`
+- `--target-sdk 36`
+- `--agp 9.1.0`
+- `--gradle 9.3.1`
 
 ### `doctor`
 
