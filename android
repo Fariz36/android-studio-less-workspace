@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/android_common.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/android_init.sh"
 
 usage() {
   cat <<'EOF'
@@ -22,6 +24,7 @@ Global options:
   -h, --help         Show this help
 
 Commands:
+  init DIRECTORY     Create a new Android project skeleton
   doctor             Show detected tools and current config
   devices            Show adb devices
   tasks              Show Gradle tasks
@@ -33,6 +36,7 @@ Commands:
   apk-path           Print the detected APK path for the variant
 
 Examples:
+  ./android init MyApp --package com.example.myapp
   ./android --project ~/code/MyApp doctor
   ./android --project ~/code/MyApp build
   ./android --project ~/code/MyApp --serial 2a8df356 install
@@ -211,6 +215,7 @@ if [[ -z "${COMMAND:-}" ]]; then
 fi
 
 case "$COMMAND" in
+  init) cmd_init ;;
   doctor) cmd_doctor ;;
   devices) cmd_devices ;;
   tasks) cmd_tasks ;;
