@@ -135,6 +135,24 @@ find_gradle_cmd() {
   fi
 }
 
+detect_latest_compile_sdk() {
+  local sdk_root platform latest
+  sdk_root="$(detect_android_sdk_root || true)"
+  [[ -n "$sdk_root" && -d "$sdk_root/platforms" ]] || return 0
+
+  latest="$(find "$sdk_root/platforms" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sed -n 's/^android-\([0-9][0-9]*\)$/\1/p' | sort -n | tail -n 1)"
+  printf '%s\n' "$latest"
+}
+
+detect_latest_build_tools_version() {
+  local sdk_root latest
+  sdk_root="$(detect_android_sdk_root || true)"
+  [[ -n "$sdk_root" && -d "$sdk_root/build-tools" ]] || return 0
+
+  latest="$(find "$sdk_root/build-tools" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | tail -n 1)"
+  printf '%s\n' "$latest"
+}
+
 adb_cmd() {
   local adb_path
   adb_path="$(find_adb)"
