@@ -153,6 +153,35 @@ detect_latest_build_tools_version() {
   printf '%s\n' "$latest"
 }
 
+read_project_sdk_dir() {
+  local local_props sdk_dir
+  local_props="$PROJECT_DIR/local.properties"
+  [[ -f "$local_props" ]] || return 0
+
+  sdk_dir="$(sed -n 's/^sdk\.dir=//p' "$local_props" | head -n 1)"
+  printf '%s\n' "$sdk_dir"
+}
+
+gradle_install_supported() {
+  local sdk_root
+  sdk_root="$(read_project_sdk_dir || true)"
+  if [[ -z "$sdk_root" ]]; then
+    sdk_root="$(detect_android_sdk_root || true)"
+  fi
+
+  [[ -n "$sdk_root" ]] || return 0
+
+  if [[ -x "$sdk_root/platform-tools/adb" ]]; then
+    return 0
+  fi
+
+  if [[ -e "$sdk_root/platform-tools/adb.exe" && ! -e "$sdk_root/platform-tools/adb" ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
 adb_cmd() {
   local adb_path
   adb_path="$(find_adb)"

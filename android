@@ -161,6 +161,15 @@ cmd_install() {
   ensure_project
   require_adb
 
+  if ! gradle_install_supported; then
+    warn "Gradle installDebug is skipped: this WSL SDK layout only exposes adb.exe, while AGP expects platform-tools/adb."
+    local apk_path
+    apk_path="$(find_apk_path)"
+    [[ -n "$apk_path" ]] || die "Could not locate APK output for variant $BUILD_VARIANT. Run ./android build first."
+    adb_cmd install -r "$apk_path"
+    return
+  fi
+
   if run_gradle ":$APP_MODULE:install$BUILD_VARIANT" "${COMMAND_ARGS[@]}"; then
     return
   fi
