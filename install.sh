@@ -25,6 +25,22 @@ check_install() {
   printf 'path=%s\n' "$resolved"
 }
 
+print_shell_init() {
+  local target_name="${1:-androidws}"
+  local target_path="${BIN_DIR}/${target_name}"
+  local completion_path="${COMPLETION_DIR}/${target_name}"
+
+  cat <<EOF
+export PATH="${BIN_DIR}:\$PATH"
+if [[ -x "${target_path}" ]]; then
+  hash -r 2>/dev/null || true
+fi
+if [[ -f "${completion_path}" ]]; then
+  source "${completion_path}"
+fi
+EOF
+}
+
 install_completion() {
   local target_name="${1:-androidws}"
   local completion_path="${COMPLETION_DIR}/${target_name}"
@@ -69,6 +85,11 @@ if [[ "${1:-}" == "--install-completion" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "--shell-init" ]]; then
+  print_shell_init "${2:-androidws}"
+  exit 0
+fi
+
 if [[ "${1:-}" == "--check-completion" ]]; then
   check_completion "${2:-androidws}"
   exit $?
@@ -90,9 +111,9 @@ Installed:
   config:  $GLOBAL_CONFIG_PATH
 
 Next:
-  1. Ensure ~/.local/bin is on PATH
-  2. Run: ./install.sh --check $TARGET_NAME
-  3. Run: ./install.sh --install-completion $TARGET_NAME
+  1. Run: ./install.sh --install-completion $TARGET_NAME
+  2. Run: source <(./install.sh --shell-init $TARGET_NAME)
+  3. Run: ./install.sh --check $TARGET_NAME
   4. Edit $GLOBAL_CONFIG_PATH if you want global defaults
   5. Run: $TARGET_NAME doctor
 

@@ -9,15 +9,16 @@ while [[ -L "$SOURCE_PATH" ]]; do
   [[ "$SOURCE_PATH" != /* ]] && SOURCE_PATH="$SOURCE_DIR/$SOURCE_PATH"
 done
 SCRIPT_DIR="$(cd -- "$(dirname -- "$SOURCE_PATH")" && pwd)"
+PROGRAM_NAME="$(basename -- "${0:-android}")"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/android_common.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/android_init.sh"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage:
-  ./android [global-options] <command> [command-args]
+  ${PROGRAM_NAME} [global-options] <command> [command-args]
 
 Global options:
   --project DIR      Android project root
@@ -46,14 +47,14 @@ Commands:
   apk-path           Print the detected APK path for the variant
 
 Examples:
-  ./android init MyApp --package com.example.myapp
-  ./android setup
-  ./android app-info
-  ./android completion bash
-  ./android --project ~/code/MyApp doctor
-  ./android --project ~/code/MyApp build
-  ./android --project ~/code/MyApp --serial 2a8df356 install
-  ./android --project ~/code/MyApp --app-id com.example.app launch
+  ${PROGRAM_NAME} init MyApp --package com.example.myapp
+  ${PROGRAM_NAME} setup
+  ${PROGRAM_NAME} app-info
+  ${PROGRAM_NAME} completion bash
+  ${PROGRAM_NAME} --project ~/code/MyApp doctor
+  ${PROGRAM_NAME} --project ~/code/MyApp build
+  ${PROGRAM_NAME} --project ~/code/MyApp --serial 2a8df356 install
+  ${PROGRAM_NAME} --project ~/code/MyApp --app-id com.example.app launch
 EOF
 }
 

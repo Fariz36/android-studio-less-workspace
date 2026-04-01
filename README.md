@@ -1,46 +1,75 @@
-# Android CLI FAFO Setup
+# Android Studio Less Workspace
 
-This folder is a lightweight replacement for the parts of Android Studio you
-actually need day-to-day when you prefer:
+`androidws` is a lightweight command-line workflow for Android development
+without relying on Android Studio for the daily edit, build, install, and log
+cycle.
 
-- editing in a normal editor
+It is intended for developers who prefer:
+
+- editing in a general-purpose editor
 - using a physical device instead of an emulator
-- running build/install/logcat from the terminal
+- running build and deployment tasks from the terminal
 
-It can now do both:
+## Capabilities
 
-- initialize a new Android project with a modern Android Studio style layout
-- wrap the common CLI flow for an existing Gradle-based Android app
+- Create a new Android project with a modern Android Studio style layout
+- Detect metadata from an existing Gradle-based Android application
+- Build, install, launch, and inspect an app from the command line
+- Work from any directory inside a project tree after setup
+- Provide Bash completion for the installed command
 
-## What is here
+## Repository Contents
 
-- `android`: main command wrapper
-- `lib/android_common.sh`: shared detection logic
+- `android`: main command entrypoint
+- `install.sh`: installer and shell integration helper
+- `lib/android_common.sh`: shared detection and runtime helpers
 - `lib/android_init.sh`: project generator
-- `.android-env.example`: per-project configuration template
+- `.android-env.example`: example configuration file
 
-## Expected baseline
+## Prerequisites
 
-- Java installed
-- Android SDK platform-tools available somewhere in WSL or Windows
-- USB debugging enabled on your device
+- Java installed and available on `PATH`
+- Android SDK platform-tools available in WSL or Windows
+- USB debugging enabled on the target Android device
 
-## Quick start
+## Installation
 
-### Install globally
+### Fastest setup for the current shell
+
+Run the following from the repository root:
 
 ```bash
-cd <path-to-android-studio-less-workspace>
 chmod +x android install.sh
 ./install.sh
+./install.sh --install-completion
+source <(./install.sh --shell-init)
 ```
 
-By default this installs a symlink as `androidws` in `~/.local/bin`.
+After this, `androidws` should be available immediately in the current shell.
 
-If `~/.local/bin` is not already on your `PATH`, add this to `~/.bashrc`:
+### Verify installation
+
+```bash
+./install.sh --check
+./install.sh --check-completion
+androidws help
+```
+
+You can also verify the resolved command path directly:
+
+```bash
+command -v androidws
+type -a androidws
+```
+
+### Persistent shell setup
+
+If you want `androidws` and its completion available in future shells, add the
+equivalent shell initialization to `~/.bashrc`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
+source ~/.local/share/bash-completion/completions/androidws
 ```
 
 Then reload your shell:
@@ -49,79 +78,38 @@ Then reload your shell:
 source ~/.bashrc
 ```
 
-Check whether the command is available:
+### Custom command name
 
-```bash
-./install.sh --check
-```
-
-That checks whether `androidws` is already on your `PATH`.
-
-You can also check directly with:
-
-```bash
-command -v androidws
-```
-
-### Install Bash completion
-
-Install the completion file:
-
-```bash
-./install.sh --install-completion
-```
-
-Check whether it is already installed:
-
-```bash
-./install.sh --check-completion
-```
-
-If your shell does not auto-load completion files from
-`~/.local/share/bash-completion/completions`, source it manually:
-
-```bash
-source ~/.local/share/bash-completion/completions/androidws
-```
-
-To make that persistent:
-
-```bash
-echo 'source ~/.local/share/bash-completion/completions/androidws' >> ~/.bashrc
-source ~/.bashrc
-```
-
-After that, Bash completion should work for:
-
-- `androidws <TAB>`
-- `androidws --<TAB>`
-- `androidws completion <TAB>`
-- `androidws init <TAB>`
-
-You can install a different command name too:
+You can install the tool under a different command name:
 
 ```bash
 ./install.sh myandroid
+./install.sh --install-completion myandroid
+source <(./install.sh --shell-init myandroid)
 ```
 
-Global config is stored at:
+## Configuration Resolution
 
-```bash
-~/.config/android-studio-less-workspace/config.env
-```
-
-Config lookup order is:
+Configuration is resolved in the following order:
 
 - `--env-file /path/to/file`
 - `ANDROID_WORKSPACE_ENV_FILE`
-- nearest `.android-env` from your current directory upward
-- nearest `.android-workspace.env` from your current directory upward
+- nearest `.android-env` from the current directory upward
+- nearest `.android-workspace.env` from the current directory upward
 - nearest `.android-env` from `--project` upward
 - nearest `.android-workspace.env` from `--project` upward
 - the tool-local `.android-env`
 - `~/.config/android-studio-less-workspace/config.env`
 
-For project-local config, the recommended flow is now:
+The default global configuration file is:
+
+```bash
+~/.config/android-studio-less-workspace/config.env
+```
+
+## Recommended Project Setup
+
+For an existing Android project:
 
 ```bash
 cd <android-project-dir>
@@ -129,8 +117,17 @@ androidws app-info
 androidws setup
 ```
 
-That will detect the app module, application id, launcher activity, and write
-`./.android-env` for the project.
+This inspects the project, detects key metadata, and writes a project-local
+`.android-env` file.
+
+The `setup` output is intended to be reviewed. In particular, verify:
+
+- `APP_ID`
+- `LAUNCH_ACTIVITY`
+- `BUILD_VARIANT`
+- `ADB_SERIAL`
+
+## Usage
 
 ### Create a new project
 
@@ -140,23 +137,25 @@ cd <android-project-dir>
 ./gradlew :app:assembleDebug
 ```
 
-The generated project is intentionally close to a current Android Studio Empty
-Activity setup:
+The generated project is intentionally close to a contemporary Android Studio
+Empty Activity structure:
 
 - Kotlin DSL
 - Gradle wrapper
 - version catalog in `gradle/libs.versions.toml`
-- one `app` module
+- single `app` module
 - Jetpack Compose entry screen
-- modern AGP 9.x built-in Kotlin flow
+- AGP 9.x built-in Kotlin flow
 
 ### Work with an existing project
 
-1. Go to the Android project root
-2. Run `androidws app-info` to inspect detected app metadata
-3. Run `androidws setup` to generate `.android-env`
-4. Review `.android-env`
-5. Run:
+Recommended sequence:
+
+1. Go to the Android project root.
+2. Run `androidws app-info`.
+3. Run `androidws setup`.
+4. Review the generated `.android-env`.
+5. Use the daily commands below.
 
 ```bash
 cd <android-project-dir>
@@ -170,21 +169,20 @@ androidws launch
 androidws logs
 ```
 
-You can also skip `.android-env` and pass values inline:
+You can also pass everything inline without a local config file:
 
 ```bash
-androidws init <android-project-dir> --package com.example.myapp
 androidws --project <android-project-dir> --serial <device-serial> build
 androidws --project <android-project-dir> --serial <device-serial> install
 androidws --project <android-project-dir> --app-id com.example.myapp launch
 androidws --adb-bin /path/to/adb devices
 ```
 
-## Commands
+## Command Reference
 
 ### `init`
 
-Creates a new Android app project.
+Create a new Android application project.
 
 Example:
 
@@ -201,13 +199,24 @@ Useful options:
 - `--agp 9.1.0`
 - `--gradle 9.3.1`
 
-### `doctor`
+### `setup`
 
-Prints detected Java, SDK, adb, Gradle, device list, and project config.
+Detect project metadata and write `./.android-env` in the current project root.
+
+### `app-info`
+
+Print detected project metadata from the current Android application, including:
+
+- app module
+- application ID
+- namespace
+- launcher activity
+- detected variants
+- connected device serial when exactly one device is attached
 
 ### `completion`
 
-Prints a shell completion script.
+Print a shell completion script.
 
 Example:
 
@@ -215,30 +224,9 @@ Example:
 androidws completion bash
 ```
 
-### `app-info`
+### `doctor`
 
-Prints detected project metadata from the current Android app, including:
-
-- app module
-- application id
-- namespace
-- launcher activity
-- detected variants
-- connected device serial when exactly one device is attached
-
-Use this to double-check what the tool inferred before writing config.
-
-### `setup`
-
-Detects project metadata and writes `./.android-env` in the current project
-root.
-
-It prints the detected values again after writing so you can verify:
-
-- `APP_ID`
-- `LAUNCH_ACTIVITY`
-- `BUILD_VARIANT`
-- `ADB_SERIAL`
+Print detected Java, SDK, adb, Gradle, device list, and active project config.
 
 ### `devices`
 
@@ -246,65 +234,90 @@ Equivalent to `adb devices`.
 
 ### `tasks`
 
-Runs `./gradlew tasks --all`.
+Run `./gradlew tasks --all`.
 
 ### `build`
 
-Runs:
+Run the configured Gradle assemble task, for example:
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-The module and variant are configurable.
-
 ### `install`
 
-First tries:
+Attempt Gradle installation first:
 
 ```bash
 ./gradlew :app:installDebug
 ```
 
-If that task fails, it falls back to `adb install -r` using the newest APK it
-can find under `build/outputs/apk`.
+If that is not supported in the current WSL layout, `androidws` falls back to
+`adb install -r` using the newest detected APK.
 
 ### `launch`
 
-- If `LAUNCH_ACTIVITY` is set, it runs `adb shell am start -n ...`
-- Otherwise it uses `adb shell monkey` with the package name
+- If `LAUNCH_ACTIVITY` is set, run `adb shell am start -n ...`
+- Otherwise use `adb shell monkey` with the package name
 
 ### `logs`
 
-Runs `adb logcat`. Extra args are passed through:
+Run `adb logcat`. Extra arguments are passed through:
 
 ```bash
 androidws logs ActivityManager:I '*:S'
 ```
 
-## WSL note
+### `clean`
 
-In many WSL setups, `adb` is installed on Windows, not Linux. The script tries
-to detect these common locations automatically:
+Run `./gradlew clean`.
+
+### `apk-path`
+
+Print the detected APK path for the current module and variant.
+
+## Bash Completion
+
+Install completion:
+
+```bash
+./install.sh --install-completion
+```
+
+Load completion into the current shell:
+
+```bash
+source <(./install.sh --shell-init)
+```
+
+Completion should then work for:
+
+- `androidws <TAB>`
+- `androidws --<TAB>`
+- `androidws completion <TAB>`
+- `androidws init <TAB>`
+
+## WSL Notes
+
+In many WSL environments, `adb` is installed on Windows rather than Linux. The
+tool attempts to detect common SDK locations automatically, including:
 
 - `$ANDROID_SDK_ROOT/platform-tools/adb`
 - `$ANDROID_HOME/platform-tools/adb`
 - `~/Android/Sdk/platform-tools/adb`
 - `/mnt/c/Users/*/AppData/Local/Android/Sdk/platform-tools/adb.exe`
 
-If detection still fails, set `ANDROID_SDK_ROOT` in your shell profile or put
-`adb` on your WSL `PATH`. If you already know the right binary, set `ADB_BIN`
-in `.android-env` and skip autodetection entirely.
+If autodetection is not sufficient, set `ADB_BIN` in `.android-env` or provide
+`--adb-bin` explicitly.
 
-## Recommended bare minimum workflow
+## Minimal Daily Workflow
 
-If you want a practical Android-Studio-without-Android-Studio setup, keep it
-small:
+A practical minimal workflow is:
 
-- editor: VS Code, Neovim, or whatever you already use
+- editor: VS Code, Neovim, or another editor
 - build: project `gradlew`
 - device: physical phone via `adb`
 - logs: `adb logcat`
 - inspection: `adb shell`, `dumpsys`, `pm`, `am`
 
-That gets you most of the daily loop without the IDE overhead.
+That covers the majority of the daily Android development loop without the IDE.
