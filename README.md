@@ -15,6 +15,7 @@ It is intended for developers who prefer:
 - Create a new Android project with a modern Android Studio style layout
 - Detect metadata from an existing Gradle-based Android application
 - Build, install, launch, and inspect an app from the command line
+- Run common build/install/launch sequences with single commands
 - Work from any directory inside a project tree after setup
 - Provide Bash completion for the installed command
 
@@ -46,6 +47,23 @@ source <(./install.sh --shell-init)
 ```
 
 After this, `androidws` should be available immediately in the current shell.
+
+## Quick Start
+
+Existing project, minimal path:
+
+```bash
+cd <android-project-dir>
+androidws setup
+androidws run
+```
+
+If you want VS Code tasks:
+
+```bash
+androidws editor-setup vscode
+code .
+```
 
 ### Verify installation
 
@@ -127,6 +145,26 @@ The `setup` output is intended to be reviewed. In particular, verify:
 - `BUILD_VARIANT`
 - `ADB_SERIAL`
 
+## Common Workflows
+
+Fast inner loop:
+
+```bash
+androidws run
+```
+
+Build and install only:
+
+```bash
+androidws sync
+```
+
+Interactive menu:
+
+```bash
+androidws menu
+```
+
 ## Usage
 
 ### Create a new project
@@ -168,6 +206,8 @@ androidws devices
 androidws build
 androidws install
 androidws launch
+androidws run
+androidws sync
 androidws logs
 ```
 
@@ -205,6 +245,22 @@ The generator is safe by default:
 - it creates `.vscode/` if needed
 - it writes `.vscode/tasks.json` only if the file does not already exist
 - it refuses to overwrite an existing `.vscode/tasks.json`
+
+If you need to refresh tasks after updates, remove the file and re-run:
+
+```bash
+rm .vscode/tasks.json
+androidws editor-setup vscode
+```
+
+The VS Code task list includes:
+
+- `androidws: build`
+- `androidws: install`
+- `androidws: launch`
+- `androidws: run`
+- `androidws: sync`
+- `androidws: logs`
 
 ## Command Reference
 
@@ -260,6 +316,30 @@ Currently supported:
 
 ```bash
 androidws editor-setup vscode
+```
+
+### `run`
+
+Build, install, and launch.
+
+```bash
+androidws run
+```
+
+### `sync`
+
+Build and install only.
+
+```bash
+androidws sync
+```
+
+### `menu`
+
+Interactive menu for common actions.
+
+```bash
+androidws menu
 ```
 
 ### `doctor`

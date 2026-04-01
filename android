@@ -36,6 +36,9 @@ Commands:
   setup              Detect project info and write .android-env
   app-info           Print detected project/app metadata
   editor-setup NAME  Generate editor integration files
+  run                Build, install, and launch
+  sync               Build and install only
+  menu               Interactive menu for common actions
   completion SHELL   Print shell completion script
   doctor             Show detected tools and current config
   devices            Show adb devices
@@ -52,6 +55,9 @@ Examples:
   ${PROGRAM_NAME} setup
   ${PROGRAM_NAME} app-info
   ${PROGRAM_NAME} editor-setup vscode
+  ${PROGRAM_NAME} run
+  ${PROGRAM_NAME} sync
+  ${PROGRAM_NAME} menu
   ${PROGRAM_NAME} completion bash
   ${PROGRAM_NAME} --project ~/code/MyApp doctor
   ${PROGRAM_NAME} --project ~/code/MyApp build
@@ -179,7 +185,7 @@ _androidws_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local commands="init setup app-info editor-setup completion doctor devices tasks build install launch logs clean apk-path"
+  local commands="init setup app-info editor-setup run sync menu completion doctor devices tasks build install launch logs clean apk-path"
   local global_opts="--project --module --variant --serial --adb-bin --env-file --app-id --activity -h --help"
   local path_opts="--project --adb-bin --env-file"
   local shell_opts="bash"
@@ -211,7 +217,7 @@ _androidws_completion() {
   local i
   for ((i = 1; i < COMP_CWORD; i++)); do
     case "${COMP_WORDS[i]}" in
-      init|setup|app-info|editor-setup|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
+      init|setup|app-info|editor-setup|run|sync|menu|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
         command_seen="${COMP_WORDS[i]}"
         break
         ;;
@@ -246,6 +252,51 @@ EOF
     *)
       die "Unsupported completion shell: ${shell_name:-<empty>}. Supported: bash"
       ;;
+  esac
+}
+
+cmd_run() {
+  cmd_build
+  cmd_install
+  cmd_launch
+}
+
+cmd_sync() {
+  cmd_build
+  cmd_install
+}
+
+cmd_menu() {
+  local selection
+  cat <<'EOF'
+Select an action:
+  1) app-info
+  2) setup
+  3) doctor
+  4) devices
+  5) build
+  6) install
+  7) launch
+  8) logs
+  9) run
+  10) sync
+  q) quit
+EOF
+  printf '> '
+  read -r selection
+  case "$selection" in
+    1) cmd_app_info ;;
+    2) cmd_setup ;;
+    3) cmd_doctor ;;
+    4) cmd_devices ;;
+    5) cmd_build ;;
+    6) cmd_install ;;
+    7) cmd_launch ;;
+    8) cmd_logs ;;
+    9) cmd_run ;;
+    10) cmd_sync ;;
+    q|Q) return 0 ;;
+    *) die "Unknown selection: $selection" ;;
   esac
 }
 
@@ -358,6 +409,34 @@ write_vscode_tasks() {
       "problemMatcher": []
     },
     {
+      "label": "androidws: sync",
+      "type": "shell",
+      "command": "androidws sync",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: run",
+      "type": "shell",
+      "command": "androidws run",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "androidws: logs",
       "type": "shell",
       "command": "androidws logs",
@@ -401,6 +480,8 @@ cmd_editor_setup() {
       printf '  - androidws: build\n'
       printf '  - androidws: install\n'
       printf '  - androidws: launch\n'
+      printf '  - androidws: sync\n'
+      printf '  - androidws: run\n'
       printf '  - androidws: logs\n'
       ;;
     "")
@@ -530,6 +611,9 @@ case "$COMMAND" in
   setup) cmd_setup ;;
   app-info) cmd_app_info ;;
   editor-setup) cmd_editor_setup ;;
+  run) cmd_run ;;
+  sync) cmd_sync ;;
+  menu) cmd_menu ;;
   completion) cmd_completion ;;
   doctor) cmd_doctor ;;
   devices) cmd_devices ;;
