@@ -55,6 +55,13 @@ find_upward_file() {
   fi
 }
 
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s\n' "$value"
+}
+
 detect_project_dir() {
   local start current
 
@@ -77,6 +84,13 @@ detect_project_dir() {
     fi
     current="$(dirname "$current")"
   done
+}
+
+project_root_name() {
+  if [[ -n "${PROJECT_DIR:-}" ]]; then
+    basename "$PROJECT_DIR"
+    return
+  fi
 }
 
 detect_android_sdk_root() {
@@ -153,6 +167,231 @@ find_gradle_cmd() {
     command -v gradle
     return
   fi
+}
+
+find_project_build_files() {
+  [[ -n "${PROJECT_DIR:-}" ]] || return 0
+  find "$PROJECT_DIR" -maxdepth 3 \( -name 'build.gradle.kts' -o -name 'build.gradle' \) -type f | sort
+}
+
+detect_app_module() {
+  local candidate build_file
+
+  if [[ -n "${CLI_APP_MODULE:-}" ]]; then
+    printf '%s\n' "$CLI_APP_MODULE"
+    return
+  fi
+
+  if [[ -n "${APP_MODULE:-}" ]]; then
+    printf '%s\n' "$APP_MODULE"
+    return
+  fi
+
+  if [[ -n "${PROJECT_DIR:-}" && -f "$PROJECT_DIR/app/build.gradle.kts" || -f "$PROJECT_DIR/app/build.gradle" ]]; then
+    printf 'app\n'
+    return
+  fi
+
+  while IFS= read -r build_file; do
+    candidate="${build_file#$PROJECT_DIR/}"
+    candidate="${candidate%/build.gradle.kts}"
+    candidate="${candidate%/build.gradle}"
+    if [[ -f "$PROJECT_DIR/$candidate/src/main/AndroidManifest.xml" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done < <(find_project_build_files)
+}
+
+module_build_file() {
+  local module="${1:-}"
+  [[ -n "$module" ]] || return 0
+
+  if [[ -f "$PROJECT_DIR/$module/build.gradle.kts" ]]; then
+    printf '%s\n' "$PROJECT_DIR/$module/build.gradle.kts"
+    return
+  fi
+
+  if [[ -f "$PROJECT_DIR/$module/build.gradle" ]]; then
+    printf '%s\n' "$PROJECT_DIR/$module/build.gradle"
+    return
+  fi
+}
+
+module_manifest_file() {
+  local module="${1:-}"
+  [[ -n "$module" ]] || return 0
+
+  if [[ -f "$PROJECT_DIR/$module/src/main/AndroidManifest.xml" ]]; then
+    printf '%s\n' "$PROJECT_DIR/$module/src/main/AndroidManifest.xml"
+  fi
+}
+
+extract_assignment_value() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+
+  sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$file" | head -n 1
+}
+
+extract_manifest_package_name() {
+  local manifest="$1"
+  [[ -f "$manifest" ]] || return 0
+  sed -n 's/.*package="\([^"]*\)".*/\1/p' "$manifest" | head -n 1
+}
+
+extract_launcher_activity() {
+  local manifest="$1"
+  python3 - <<'PY' "$manifest"
+import sys
+import xml.etree.ElementTree as ET
+
+manifest_path = sys.argv[1]
+android_ns = "{http://schemas.android.com/apk/res/android}"
+
+try:
+    root = ET.parse(manifest_path).getroot()
+except Exception:
+    sys.exit(0)
+
+application = root.find("application")
+if application is None:
+    sys.exit(0)
+
+for activity_tag in ("activity", "activity-alias"):
+    for activity in application.findall(activity_tag):
+        name = activity.attrib.get(android_ns + "name", "")
+        if not name:
+            continue
+        for intent_filter in activity.findall("intent-filter"):
+            actions = {item.attrib.get(android_ns + "name", "") for item in intent_filter.findall("action")}
+            categories = {item.attrib.get(android_ns + "name", "") for item in intent_filter.findall("category")}
+            if "android.intent.action.MAIN" in actions and "android.intent.category.LAUNCHER" in categories:
+                print(name)
+                sys.exit(0)
+PY
+}
+
+extract_build_variants() {
+  local build_file="$1"
+  [[ -f "$build_file" ]] || return 0
+  python3 - <<'PY' "$build_file"
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8").read()
+start = re.search(r'buildTypes\s*\{', text)
+variants = []
+if start:
+    i = start.end()
+    depth = 1
+    body_chars = []
+    while i < len(text) and depth > 0:
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        body_chars.append(ch)
+        i += 1
+    body = "".join(body_chars)
+    variants = re.findall(r'^\s*([A-Za-z0-9_]+)\s*\{', body, re.M)
+
+if not variants:
+    variants = ["debug", "release"]
+elif "debug" not in variants:
+    variants = ["debug"] + variants
+
+for item in dict.fromkeys(variants):
+    print(item)
+PY
+}
+
+detect_application_id() {
+  local module build_file manifest value
+  module="${1:-$(detect_app_module || true)}"
+  build_file="$(module_build_file "$module")"
+  manifest="$(module_manifest_file "$module")"
+
+  value="$(extract_assignment_value "$build_file" 'applicationId')"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return
+  fi
+
+  value="$(extract_assignment_value "$build_file" 'namespace')"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return
+  fi
+
+  extract_manifest_package_name "$manifest"
+}
+
+detect_namespace() {
+  local module build_file
+  module="${1:-$(detect_app_module || true)}"
+  build_file="$(module_build_file "$module")"
+  extract_assignment_value "$build_file" 'namespace'
+}
+
+detect_launcher_activity() {
+  local module manifest app_id activity
+  module="${1:-$(detect_app_module || true)}"
+  manifest="$(module_manifest_file "$module")"
+  activity="$(extract_launcher_activity "$manifest")"
+  [[ -n "$activity" ]] || return 0
+
+  if [[ "$activity" == .* ]]; then
+    printf '%s\n' "$activity"
+    return
+  fi
+
+  app_id="$(detect_application_id "$module")"
+  if [[ -n "$app_id" && "$activity" == "$app_id"* ]]; then
+    printf '.%s\n' "${activity#"$app_id."}"
+    return
+  fi
+
+  printf '%s\n' "$activity"
+}
+
+detect_connected_device_serial() {
+  local adb_path devices
+  adb_path="$(find_adb || true)"
+  [[ -n "$adb_path" ]] || return 0
+
+  devices="$("$adb_path" devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')"
+  if [[ "$(printf '%s\n' "$devices" | sed '/^$/d' | wc -l)" -eq 1 ]]; then
+    printf '%s\n' "$devices" | sed '/^$/d'
+  fi
+}
+
+print_detected_app_info() {
+  local module build_file manifest app_id namespace activity variants serial
+  module="$(detect_app_module || true)"
+  build_file="$(module_build_file "$module")"
+  manifest="$(module_manifest_file "$module")"
+  app_id="$(detect_application_id "$module" || true)"
+  namespace="$(detect_namespace "$module" || true)"
+  activity="$(detect_launcher_activity "$module" || true)"
+  serial="$(detect_connected_device_serial || true)"
+
+  printf 'project_dir=%s\n' "${PROJECT_DIR:-}"
+  printf 'project_name=%s\n' "$(project_root_name || true)"
+  printf 'app_module=%s\n' "$module"
+  printf 'build_file=%s\n' "$build_file"
+  printf 'manifest=%s\n' "$manifest"
+  printf 'application_id=%s\n' "$app_id"
+  printf 'namespace=%s\n' "$namespace"
+  printf 'launch_activity=%s\n' "$activity"
+  printf 'detected_device_serial=%s\n' "$serial"
+  printf 'variants='
+  variants="$(extract_build_variants "$build_file" | paste -sd, -)"
+  printf '%s\n' "$variants"
 }
 
 detect_latest_compile_sdk() {

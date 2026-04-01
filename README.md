@@ -30,7 +30,7 @@ It can now do both:
 ### Install globally
 
 ```bash
-cd /home/fariz/TUGAS_ITB/mobdev/android-studio-less-workspace
+cd <path-to-android-studio-less-workspace>
 chmod +x android install.sh
 ./install.sh
 ```
@@ -47,6 +47,20 @@ Then reload your shell:
 
 ```bash
 source ~/.bashrc
+```
+
+Check whether the command is available:
+
+```bash
+./install.sh --check
+```
+
+That checks whether `androidws` is already on your `PATH`.
+
+You can also check directly with:
+
+```bash
+command -v androidws
 ```
 
 You can install a different command name too:
@@ -72,11 +86,22 @@ Config lookup order is:
 - the tool-local `.android-env`
 - `~/.config/android-studio-less-workspace/config.env`
 
+For project-local config, the recommended flow is now:
+
+```bash
+cd <android-project-dir>
+androidws app-info
+androidws setup
+```
+
+That will detect the app module, application id, launcher activity, and write
+`./.android-env` for the project.
+
 ### Create a new project
 
 ```bash
-androidws init ~/code/MyApp --package com.example.myapp
-cd ~/code/MyApp
+androidws init <android-project-dir> --package com.example.myapp
+cd <android-project-dir>
 ./gradlew :app:assembleDebug
 ```
 
@@ -92,13 +117,16 @@ Activity setup:
 
 ### Work with an existing project
 
-1. Copy `.android-env.example` to `.android-env`
-2. Set `PROJECT_DIR` to your Android app root
-3. Optionally set `ADB_BIN`, `ADB_SERIAL`, `APP_ID`, and `LAUNCH_ACTIVITY`
-4. Run:
+1. Go to the Android project root
+2. Run `androidws app-info` to inspect detected app metadata
+3. Run `androidws setup` to generate `.android-env`
+4. Review `.android-env`
+5. Run:
 
 ```bash
-cd ~/code/MyApp
+cd <android-project-dir>
+androidws app-info
+androidws setup
 androidws doctor
 androidws devices
 androidws build
@@ -110,10 +138,10 @@ androidws logs
 You can also skip `.android-env` and pass values inline:
 
 ```bash
-androidws init ~/code/MyApp --package com.example.myapp
-androidws --project ~/code/MyApp --serial 2a8df356 build
-androidws --project ~/code/MyApp --serial 2a8df356 install
-androidws --project ~/code/MyApp --app-id com.example.myapp launch
+androidws init <android-project-dir> --package com.example.myapp
+androidws --project <android-project-dir> --serial <device-serial> build
+androidws --project <android-project-dir> --serial <device-serial> install
+androidws --project <android-project-dir> --app-id com.example.myapp launch
 androidws --adb-bin /path/to/adb devices
 ```
 
@@ -126,7 +154,7 @@ Creates a new Android app project.
 Example:
 
 ```bash
-./android init ~/code/MyApp --package com.example.myapp
+androidws init <android-project-dir> --package com.example.myapp
 ```
 
 Useful options:
@@ -141,6 +169,31 @@ Useful options:
 ### `doctor`
 
 Prints detected Java, SDK, adb, Gradle, device list, and project config.
+
+### `app-info`
+
+Prints detected project metadata from the current Android app, including:
+
+- app module
+- application id
+- namespace
+- launcher activity
+- detected variants
+- connected device serial when exactly one device is attached
+
+Use this to double-check what the tool inferred before writing config.
+
+### `setup`
+
+Detects project metadata and writes `./.android-env` in the current project
+root.
+
+It prints the detected values again after writing so you can verify:
+
+- `APP_ID`
+- `LAUNCH_ACTIVITY`
+- `BUILD_VARIANT`
+- `ADB_SERIAL`
 
 ### `devices`
 
@@ -181,7 +234,7 @@ can find under `build/outputs/apk`.
 Runs `adb logcat`. Extra args are passed through:
 
 ```bash
-./android logs ActivityManager:I *:S
+androidws logs ActivityManager:I '*:S'
 ```
 
 ## WSL note
