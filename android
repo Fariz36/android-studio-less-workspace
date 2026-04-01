@@ -35,6 +35,7 @@ Commands:
   init DIRECTORY     Create a new Android project skeleton
   setup              Detect project info and write .android-env
   app-info           Print detected project/app metadata
+  editor-setup NAME  Generate editor integration files
   completion SHELL   Print shell completion script
   doctor             Show detected tools and current config
   devices            Show adb devices
@@ -50,6 +51,7 @@ Examples:
   ${PROGRAM_NAME} init MyApp --package com.example.myapp
   ${PROGRAM_NAME} setup
   ${PROGRAM_NAME} app-info
+  ${PROGRAM_NAME} editor-setup vscode
   ${PROGRAM_NAME} completion bash
   ${PROGRAM_NAME} --project ~/code/MyApp doctor
   ${PROGRAM_NAME} --project ~/code/MyApp build
@@ -177,7 +179,7 @@ _androidws_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local commands="init setup app-info completion doctor devices tasks build install launch logs clean apk-path"
+  local commands="init setup app-info editor-setup completion doctor devices tasks build install launch logs clean apk-path"
   local global_opts="--project --module --variant --serial --adb-bin --env-file --app-id --activity -h --help"
   local path_opts="--project --adb-bin --env-file"
   local shell_opts="bash"
@@ -209,7 +211,7 @@ _androidws_completion() {
   local i
   for ((i = 1; i < COMP_CWORD; i++)); do
     case "${COMP_WORDS[i]}" in
-      init|setup|app-info|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
+      init|setup|app-info|editor-setup|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
         command_seen="${COMP_WORDS[i]}"
         break
         ;;
@@ -219,6 +221,9 @@ _androidws_completion() {
   case "$command_seen" in
     "")
       COMPREPLY=( $(compgen -W "$commands $global_opts" -- "$cur") )
+      ;;
+    editor-setup)
+      COMPREPLY=( $(compgen -W "vscode $global_opts" -- "$cur") )
       ;;
     completion)
       COMPREPLY=( $(compgen -W "$shell_opts $global_opts" -- "$cur") )
@@ -240,6 +245,169 @@ EOF
       ;;
     *)
       die "Unsupported completion shell: ${shell_name:-<empty>}. Supported: bash"
+      ;;
+  esac
+}
+
+write_vscode_tasks() {
+  local tasks_file="$1"
+  cat >"$tasks_file" <<'EOF'
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "androidws: app-info",
+      "type": "shell",
+      "command": "androidws app-info",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: setup",
+      "type": "shell",
+      "command": "androidws setup",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: doctor",
+      "type": "shell",
+      "command": "androidws doctor",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: devices",
+      "type": "shell",
+      "command": "androidws devices",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: build",
+      "type": "shell",
+      "command": "androidws build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: install",
+      "type": "shell",
+      "command": "androidws install",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: launch",
+      "type": "shell",
+      "command": "androidws launch",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: logs",
+      "type": "shell",
+      "command": "androidws logs",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}
+EOF
+}
+
+cmd_editor_setup() {
+  local editor_name vscode_dir tasks_file
+  editor_name="${COMMAND_ARGS[0]:-}"
+
+  ensure_project
+
+  case "$editor_name" in
+    vscode)
+      vscode_dir="$PROJECT_DIR/.vscode"
+      tasks_file="$vscode_dir/tasks.json"
+      if [[ -f "$tasks_file" ]]; then
+        die "Refusing to overwrite existing VS Code task file: $tasks_file"
+      fi
+
+      mkdir -p "$vscode_dir"
+      write_vscode_tasks "$tasks_file"
+      printf 'Wrote %s\n' "$tasks_file"
+      printf 'Generated tasks:\n'
+      printf '  - androidws: app-info\n'
+      printf '  - androidws: setup\n'
+      printf '  - androidws: doctor\n'
+      printf '  - androidws: devices\n'
+      printf '  - androidws: build\n'
+      printf '  - androidws: install\n'
+      printf '  - androidws: launch\n'
+      printf '  - androidws: logs\n'
+      ;;
+    "")
+      die "editor-setup requires an editor name. Supported: vscode"
+      ;;
+    *)
+      die "Unsupported editor target: $editor_name. Supported: vscode"
       ;;
   esac
 }
@@ -361,6 +529,7 @@ case "$COMMAND" in
   init) cmd_init ;;
   setup) cmd_setup ;;
   app-info) cmd_app_info ;;
+  editor-setup) cmd_editor_setup ;;
   completion) cmd_completion ;;
   doctor) cmd_doctor ;;
   devices) cmd_devices ;;

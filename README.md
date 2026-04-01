@@ -154,13 +154,15 @@ Recommended sequence:
 1. Go to the Android project root.
 2. Run `androidws app-info`.
 3. Run `androidws setup`.
-4. Review the generated `.android-env`.
-5. Use the daily commands below.
+4. Run `androidws editor-setup vscode`.
+5. Review the generated `.android-env`.
+6. Use the daily commands below.
 
 ```bash
 cd <android-project-dir>
 androidws app-info
 androidws setup
+androidws editor-setup vscode
 androidws doctor
 androidws devices
 androidws build
@@ -177,6 +179,32 @@ androidws --project <android-project-dir> --serial <device-serial> install
 androidws --project <android-project-dir> --app-id com.example.myapp launch
 androidws --adb-bin /path/to/adb devices
 ```
+
+### VS Code integration
+
+Generate VS Code task integration on demand:
+
+```bash
+cd <android-project-dir>
+androidws setup
+androidws editor-setup vscode
+code .
+```
+
+This writes:
+
+```bash
+.vscode/tasks.json
+```
+
+The generated tasks call `androidws` directly and assume it is already installed
+and available on `PATH`.
+
+The generator is safe by default:
+
+- it creates `.vscode/` if needed
+- it writes `.vscode/tasks.json` only if the file does not already exist
+- it refuses to overwrite an existing `.vscode/tasks.json`
 
 ## Command Reference
 
@@ -222,6 +250,16 @@ Example:
 
 ```bash
 androidws completion bash
+```
+
+### `editor-setup`
+
+Generate editor integration files.
+
+Currently supported:
+
+```bash
+androidws editor-setup vscode
 ```
 
 ### `doctor`
