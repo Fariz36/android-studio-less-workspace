@@ -19,6 +19,7 @@ Global options:
   --variant NAME     Build variant (default: Debug)
   --serial ID        adb device serial
   --adb-bin PATH     explicit adb/adb.exe path
+  --env-file PATH    explicit env file to source
   --app-id ID        Android application id/package
   --activity NAME    Launch activity, e.g. .MainActivity
   -h, --help         Show this help
@@ -67,6 +68,10 @@ parse_args() {
         ;;
       --adb-bin)
         CLI_ADB_BIN="${2:-}"
+        shift 2
+        ;;
+      --env-file)
+        CLI_ENV_FILE="${2:-}"
         shift 2
         ;;
       --app-id)
@@ -214,8 +219,8 @@ cmd_apk_path() {
   find_apk_path
 }
 
-load_android_env
 parse_args "$@"
+load_android_env
 apply_cli_overrides
 
 if [[ -z "${COMMAND:-}" ]]; then

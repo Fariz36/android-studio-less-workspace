@@ -27,12 +27,55 @@ It can now do both:
 
 ## Quick start
 
-### Create a new project
+### Install globally
 
 ```bash
 cd /home/fariz/TUGAS_ITB/mobdev/android-studio-less-workspace
-chmod +x android
-./android init ~/code/MyApp --package com.example.myapp
+chmod +x android install.sh
+./install.sh
+```
+
+By default this installs a symlink as `androidws` in `~/.local/bin`.
+
+If `~/.local/bin` is not already on your `PATH`, add this to `~/.bashrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload your shell:
+
+```bash
+source ~/.bashrc
+```
+
+You can install a different command name too:
+
+```bash
+./install.sh myandroid
+```
+
+Global config is stored at:
+
+```bash
+~/.config/android-studio-less-workspace/config.env
+```
+
+Config lookup order is:
+
+- `--env-file /path/to/file`
+- `ANDROID_WORKSPACE_ENV_FILE`
+- nearest `.android-env` from your current directory upward
+- nearest `.android-workspace.env` from your current directory upward
+- nearest `.android-env` from `--project` upward
+- nearest `.android-workspace.env` from `--project` upward
+- the tool-local `.android-env`
+- `~/.config/android-studio-less-workspace/config.env`
+
+### Create a new project
+
+```bash
+androidws init ~/code/MyApp --package com.example.myapp
 cd ~/code/MyApp
 ./gradlew :app:assembleDebug
 ```
@@ -55,24 +98,23 @@ Activity setup:
 4. Run:
 
 ```bash
-cd /home/fariz/TUGAS_ITB/mobdev/android-studio-less-workspace
-chmod +x android
-./android doctor
-./android devices
-./android build
-./android install
-./android launch
-./android logs
+cd ~/code/MyApp
+androidws doctor
+androidws devices
+androidws build
+androidws install
+androidws launch
+androidws logs
 ```
 
 You can also skip `.android-env` and pass values inline:
 
 ```bash
-./android init ~/code/MyApp --package com.example.myapp
-./android --project ~/code/MyApp --serial 2a8df356 build
-./android --project ~/code/MyApp --serial 2a8df356 install
-./android --project ~/code/MyApp --app-id com.example.myapp launch
-./android --adb-bin /path/to/adb devices
+androidws init ~/code/MyApp --package com.example.myapp
+androidws --project ~/code/MyApp --serial 2a8df356 build
+androidws --project ~/code/MyApp --serial 2a8df356 install
+androidws --project ~/code/MyApp --app-id com.example.myapp launch
+androidws --adb-bin /path/to/adb devices
 ```
 
 ## Commands

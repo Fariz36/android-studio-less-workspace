@@ -9,6 +9,7 @@ CLI_ADB_SERIAL=""
 CLI_APP_ID=""
 CLI_LAUNCH_ACTIVITY=""
 CLI_ADB_BIN=""
+CLI_ENV_FILE=""
 COMMAND=""
 
 log() {
@@ -32,6 +33,25 @@ canonical_path() {
     cd "$(dirname "$path")" >/dev/null 2>&1 && printf '%s/%s\n' "$(pwd)" "$(basename "$path")"
   else
     return 1
+  fi
+}
+
+find_upward_file() {
+  local start name current
+  start="$1"
+  name="$2"
+  current="$start"
+
+  while [[ -n "$current" && "$current" != "/" ]]; do
+    if [[ -f "$current/$name" ]]; then
+      printf '%s\n' "$current/$name"
+      return
+    fi
+    current="$(dirname "$current")"
+  done
+
+  if [[ -f "/$name" ]]; then
+    printf '/%s\n' "$name"
   fi
 }
 
@@ -223,11 +243,38 @@ find_apk_path() {
 }
 
 load_android_env() {
-  local env_file="$SCRIPT_DIR/.android-env"
-  if [[ -f "$env_file" ]]; then
+  local env_file candidate
+
+  if [[ -n "${CLI_ENV_FILE:-}" ]]; then
+    env_file="$(canonical_path "$CLI_ENV_FILE" || true)"
+    [[ -n "$env_file" ]] || die "Env file not found: $CLI_ENV_FILE"
     # shellcheck source=/dev/null
     source "$env_file"
+    return
   fi
+
+  if [[ -n "${ANDROID_WORKSPACE_ENV_FILE:-}" ]]; then
+    env_file="$(canonical_path "$ANDROID_WORKSPACE_ENV_FILE" || true)"
+    [[ -n "$env_file" ]] || die "Env file not found: $ANDROID_WORKSPACE_ENV_FILE"
+    # shellcheck source=/dev/null
+    source "$env_file"
+    return
+  fi
+
+  for candidate in \
+    "$(find_upward_file "$PWD" ".android-env" || true)" \
+    "$(find_upward_file "$PWD" ".android-workspace.env" || true)" \
+    "$(find_upward_file "${CLI_PROJECT_DIR:-}" ".android-env" || true)" \
+    "$(find_upward_file "${CLI_PROJECT_DIR:-}" ".android-workspace.env" || true)" \
+    "$SCRIPT_DIR/.android-env" \
+    "$HOME/.config/android-studio-less-workspace/config.env"
+  do
+    if [[ -n "$candidate" && -f "$candidate" ]]; then
+      # shellcheck source=/dev/null
+      source "$candidate"
+      return
+    fi
+  done
 }
 
 apply_cli_overrides() {
