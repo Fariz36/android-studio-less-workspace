@@ -34,6 +34,7 @@ Commands:
   init DIRECTORY     Create a new Android project skeleton
   setup              Detect project info and write .android-env
   app-info           Print detected project/app metadata
+  completion SHELL   Print shell completion script
   doctor             Show detected tools and current config
   devices            Show adb devices
   tasks              Show Gradle tasks
@@ -48,6 +49,7 @@ Examples:
   ./android init MyApp --package com.example.myapp
   ./android setup
   ./android app-info
+  ./android completion bash
   ./android --project ~/code/MyApp doctor
   ./android --project ~/code/MyApp build
   ./android --project ~/code/MyApp --serial 2a8df356 install
@@ -160,6 +162,85 @@ cmd_doctor() {
 cmd_app_info() {
   ensure_project
   print_detected_app_info
+}
+
+cmd_completion() {
+  local shell_name="${COMMAND_ARGS[0]:-}"
+
+  case "$shell_name" in
+    bash)
+      cat <<'EOF'
+_androidws_completion() {
+  local cur prev words cword
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local commands="init setup app-info completion doctor devices tasks build install launch logs clean apk-path"
+  local global_opts="--project --module --variant --serial --adb-bin --env-file --app-id --activity -h --help"
+  local path_opts="--project --adb-bin --env-file"
+  local shell_opts="bash"
+
+  if [[ $COMP_CWORD -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "$commands $global_opts" -- "$cur") )
+    return 0
+  fi
+
+  case "$prev" in
+    --project|--adb-bin|--env-file)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    --module|--variant|--serial|--app-id|--activity)
+      return 0
+      ;;
+    completion)
+      COMPREPLY=( $(compgen -W "$shell_opts" -- "$cur") )
+      return 0
+      ;;
+    init)
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      return 0
+      ;;
+  esac
+
+  local command_seen=""
+  local i
+  for ((i = 1; i < COMP_CWORD; i++)); do
+    case "${COMP_WORDS[i]}" in
+      init|setup|app-info|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
+        command_seen="${COMP_WORDS[i]}"
+        break
+        ;;
+    esac
+  done
+
+  case "$command_seen" in
+    "")
+      COMPREPLY=( $(compgen -W "$commands $global_opts" -- "$cur") )
+      ;;
+    completion)
+      COMPREPLY=( $(compgen -W "$shell_opts $global_opts" -- "$cur") )
+      ;;
+    init)
+      COMPREPLY=( $(compgen -W "$global_opts --package --app-name --template --min-sdk --compile-sdk --target-sdk --agp --kotlin --gradle --compose-bom --force" -- "$cur") )
+      ;;
+    logs)
+      COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+      ;;
+    *)
+      COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+      ;;
+  esac
+}
+
+complete -F _androidws_completion androidws
+EOF
+      ;;
+    *)
+      die "Unsupported completion shell: ${shell_name:-<empty>}. Supported: bash"
+      ;;
+  esac
 }
 
 cmd_setup() {
@@ -279,6 +360,7 @@ case "$COMMAND" in
   init) cmd_init ;;
   setup) cmd_setup ;;
   app-info) cmd_app_info ;;
+  completion) cmd_completion ;;
   doctor) cmd_doctor ;;
   devices) cmd_devices ;;
   tasks) cmd_tasks ;;

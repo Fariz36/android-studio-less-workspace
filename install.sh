@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${HOME}/.local/bin"
 GLOBAL_CONFIG_DIR="${HOME}/.config/android-studio-less-workspace"
 GLOBAL_CONFIG_PATH="${GLOBAL_CONFIG_DIR}/config.env"
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+COMPLETION_DIR="${XDG_DATA_HOME}/bash-completion/completions"
 
 check_install() {
   local target_name="${1:-androidws}"
@@ -23,8 +25,52 @@ check_install() {
   printf 'path=%s\n' "$resolved"
 }
 
+install_completion() {
+  local target_name="${1:-androidws}"
+  local completion_path="${COMPLETION_DIR}/${target_name}"
+
+  mkdir -p "$COMPLETION_DIR"
+  "${SCRIPT_DIR}/android" completion bash | sed "s/complete -F _androidws_completion androidws$/complete -F _androidws_completion ${target_name}/" >"$completion_path"
+
+  cat <<EOF
+Installed bash completion:
+  file: $completion_path
+
+Enable it in the current shell:
+  source "$completion_path"
+
+Persist it if your shell does not auto-load ~/.local/share/bash-completion/completions:
+  echo 'source "$completion_path"' >> ~/.bashrc
+EOF
+}
+
+check_completion() {
+  local target_name="${1:-androidws}"
+  local completion_path="${COMPLETION_DIR}/${target_name}"
+
+  if [[ -f "$completion_path" ]]; then
+    printf 'found\n'
+    printf 'completion=%s\n' "$completion_path"
+    return 0
+  fi
+
+  printf 'not_found\n'
+  printf 'completion=%s\n' "$completion_path"
+  return 1
+}
+
 if [[ "${1:-}" == "--check" ]]; then
   check_install "${2:-androidws}"
+  exit $?
+fi
+
+if [[ "${1:-}" == "--install-completion" ]]; then
+  install_completion "${2:-androidws}"
+  exit 0
+fi
+
+if [[ "${1:-}" == "--check-completion" ]]; then
+  check_completion "${2:-androidws}"
   exit $?
 fi
 
@@ -45,9 +91,10 @@ Installed:
 
 Next:
   1. Ensure ~/.local/bin is on PATH
-  2. Edit $GLOBAL_CONFIG_PATH if you want global defaults
-  3. Run: ./install.sh --check $TARGET_NAME
-  4. Run: $TARGET_NAME doctor
+  2. Run: ./install.sh --check $TARGET_NAME
+  3. Run: ./install.sh --install-completion $TARGET_NAME
+  4. Edit $GLOBAL_CONFIG_PATH if you want global defaults
+  5. Run: $TARGET_NAME doctor
 
 Per-project config:
   Put .android-env in your Android project root and the command will auto-load it

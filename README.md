@@ -63,6 +63,41 @@ You can also check directly with:
 command -v androidws
 ```
 
+### Install Bash completion
+
+Install the completion file:
+
+```bash
+./install.sh --install-completion
+```
+
+Check whether it is already installed:
+
+```bash
+./install.sh --check-completion
+```
+
+If your shell does not auto-load completion files from
+`~/.local/share/bash-completion/completions`, source it manually:
+
+```bash
+source ~/.local/share/bash-completion/completions/androidws
+```
+
+To make that persistent:
+
+```bash
+echo 'source ~/.local/share/bash-completion/completions/androidws' >> ~/.bashrc
+source ~/.bashrc
+```
+
+After that, Bash completion should work for:
+
+- `androidws <TAB>`
+- `androidws --<TAB>`
+- `androidws completion <TAB>`
+- `androidws init <TAB>`
+
 You can install a different command name too:
 
 ```bash
@@ -169,6 +204,16 @@ Useful options:
 ### `doctor`
 
 Prints detected Java, SDK, adb, Gradle, device list, and project config.
+
+### `completion`
+
+Prints a shell completion script.
+
+Example:
+
+```bash
+androidws completion bash
+```
 
 ### `app-info`
 
