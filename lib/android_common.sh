@@ -62,6 +62,70 @@ trim_whitespace() {
   printf '%s\n' "$value"
 }
 
+env_serialize_value() {
+  local value="${1-}"
+  if [[ -z "$value" ]]; then
+    return 0
+  fi
+
+  printf '%q' "$value"
+}
+
+env_assignment_line() {
+  local key="$1"
+  local value="${2-}"
+  printf '%s=%s\n' "$key" "$(env_serialize_value "$value")"
+}
+
+project_env_file_path() {
+  [[ -n "${PROJECT_DIR:-}" ]] || return 0
+  printf '%s\n' "$PROJECT_DIR/.android-env"
+}
+
+upsert_env_key() {
+  local file="$1"
+  local key="$2"
+  local value="${3-}"
+  local tmp_file line found=0
+
+  [[ -f "$file" ]] || return 1
+
+  tmp_file="$(mktemp "${TMPDIR:-/tmp}/androidws-env.XXXXXX")"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ $found -eq 0 && "$line" =~ ^[[:space:]]*$key[[:space:]]*= ]]; then
+      env_assignment_line "$key" "$value" >>"$tmp_file"
+      found=1
+      continue
+    fi
+    printf '%s\n' "$line" >>"$tmp_file"
+  done <"$file"
+
+  if [[ $found -eq 0 ]]; then
+    env_assignment_line "$key" "$value" >>"$tmp_file"
+  fi
+
+  mv "$tmp_file" "$file"
+}
+
+clear_env_key() {
+  local file="$1"
+  local key="$2"
+
+  upsert_env_key "$file" "$key" ""
+}
+
+read_env_key_from_file() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+
+  (
+    # shellcheck source=/dev/null
+    source "$file"
+    printf '%s\n' "${!key:-}"
+  )
+}
+
 detect_project_dir() {
   local start current
 
@@ -451,6 +515,26 @@ adb_cmd() {
   else
     "$adb_path" "$@"
   fi
+}
+
+adb_global_cmd() {
+  local adb_path
+  adb_path="$(find_adb)"
+  [[ -n "$adb_path" ]] || die "adb not found. Set ANDROID_SDK_ROOT/ANDROID_HOME or install platform-tools."
+  "$adb_path" "$@"
+}
+
+list_connected_device_serials() {
+  adb_global_cmd devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }'
+}
+
+list_connected_wireless_serials() {
+  list_connected_device_serials | awk 'index($1, ":") > 0 { print $1 }'
+}
+
+is_wireless_serial() {
+  local serial="${1:-}"
+  [[ "$serial" == *:* ]]
 }
 
 run_gradle() {

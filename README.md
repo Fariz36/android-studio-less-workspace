@@ -15,6 +15,7 @@ It is intended for developers who prefer:
 - Create a new Android project with a modern Android Studio style layout
 - Detect metadata from an existing Gradle-based Android application
 - Build, install, launch, and inspect an app from the command line
+- Pair and connect an Android 11+ physical device over wireless adb
 - Run common build/install/launch sequences with single commands
 - Work from any directory inside a project tree after setup
 - Provide Bash completion for the installed command
@@ -32,6 +33,7 @@ It is intended for developers who prefer:
 - Java installed and available on `PATH`
 - Android SDK platform-tools available in WSL or Windows
 - USB debugging enabled on the target Android device
+- Wireless debugging enabled on the target device for Android 11+ wireless use
 
 ## Installation
 
@@ -55,6 +57,17 @@ Existing project, minimal path:
 ```bash
 cd <android-project-dir>
 androidws setup
+androidws run
+```
+
+Existing project, wireless device:
+
+```bash
+cd <android-project-dir>
+androidws setup
+androidws wireless pair --pair-host <phone-ip> --pair-port <pair-port> --pair-code <pair-code>
+androidws wireless connect --host <phone-ip> --port <debug-port>
+androidws wireless doctor
 androidws run
 ```
 
@@ -203,6 +216,9 @@ androidws setup
 androidws editor-setup vscode
 androidws doctor
 androidws devices
+androidws device current
+androidws wireless status
+androidws wireless doctor
 androidws build
 androidws install
 androidws launch
@@ -219,6 +235,64 @@ androidws --project <android-project-dir> --serial <device-serial> install
 androidws --project <android-project-dir> --app-id com.example.myapp launch
 androidws --adb-bin /path/to/adb devices
 ```
+
+### Wireless debugging on a real device
+
+For Android 11 and newer, `androidws` supports the official adb wireless
+debugging flow for a physical device on the same Wi-Fi network.
+
+1. Enable Developer options and Wireless debugging on the phone.
+2. Keep the workstation and phone on the same Wi-Fi network.
+3. On the phone, open Wireless debugging and choose `Pair device with pairing code`.
+4. Run:
+
+```bash
+androidws wireless pair --pair-host <phone-ip> --pair-port <pair-port> --pair-code <pair-code>
+```
+
+5. Then connect to the current debugging endpoint:
+
+```bash
+androidws wireless connect --host <phone-ip> --port <debug-port>
+```
+
+6. Use the normal workflow:
+
+```bash
+androidws run
+androidws install
+androidws logs
+```
+
+If the debugging endpoint changes or the device does not reconnect
+automatically, run `androidws wireless connect` again with the current
+`<debug-port>`.
+
+Use `androidws wireless doctor` when the workflow is not behaving as expected.
+It reports the selected serial, connected wireless devices, and the next action
+to take when adb is missing, no wireless device is selected, a wireless device
+is reachable but not connected, or the saved endpoint is unreachable.
+
+If project-local `.android-env` already exists, `androidws wireless connect`
+updates `ADB_SERIAL` there so later commands keep targeting the same device.
+If the file does not exist yet, the connection still works for the current adb
+session and `androidws` tells you to run `androidws setup` before reconnecting
+to persist it.
+
+Depending on the network and mDNS availability, paired devices may reconnect
+automatically, or you may still need a manual `adb connect` step.
+
+### Explicit device selection
+
+If you have multiple devices connected, pin the active one in `.android-env`:
+
+```bash
+androidws device use <serial>
+androidws device current
+```
+
+You can use either a USB serial such as `2a8df356` or a wireless endpoint such
+as `192.168.0.5:41287`.
 
 ### VS Code integration
 
@@ -256,11 +330,17 @@ androidws editor-setup vscode
 The VS Code task list includes:
 
 - `androidws: build`
+- `androidws: doctor`
 - `androidws: install`
 - `androidws: launch`
 - `androidws: run`
 - `androidws: sync`
 - `androidws: logs`
+- `androidws: wireless doctor`
+- `androidws: wireless status`
+- `androidws: wireless pair`
+- `androidws: wireless connect`
+- `androidws: wireless run`
 
 ## Command Reference
 
@@ -316,6 +396,61 @@ Currently supported:
 
 ```bash
 androidws editor-setup vscode
+```
+
+The generated VS Code tasks include prompts for wireless host, port, and pairing
+code so you can pair, connect, run diagnostics, and execute a sequential
+`androidws: wireless run` flow without editing `tasks.json` manually.
+
+### `device`
+
+Manage the selected adb serial.
+
+Pin a device:
+
+```bash
+androidws device use <serial>
+```
+
+Show the configured serial and connected devices:
+
+```bash
+androidws device current
+```
+
+### `wireless`
+
+Manage Android 11+ wireless adb device flows.
+
+Pair with a pairing code:
+
+```bash
+androidws wireless pair --pair-host <phone-ip> --pair-port <pair-port> --pair-code <pair-code>
+```
+
+Connect to the current wireless debugging endpoint:
+
+```bash
+androidws wireless connect --host <phone-ip> --port <debug-port>
+```
+
+Inspect the configured serial and connected wireless endpoints:
+
+```bash
+androidws wireless status
+```
+
+Run targeted diagnostics for wireless setup problems:
+
+```bash
+androidws wireless doctor
+```
+
+Disconnect a wireless endpoint:
+
+```bash
+androidws wireless disconnect
+androidws wireless disconnect --serial <phone-ip>:<debug-port>
 ```
 
 ### `run`
@@ -414,6 +549,7 @@ Completion should then work for:
 - `androidws --<TAB>`
 - `androidws completion <TAB>`
 - `androidws init <TAB>`
+- `androidws wireless <TAB>`
 
 ## WSL Notes
 

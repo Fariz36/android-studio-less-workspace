@@ -36,6 +36,8 @@ Commands:
   setup              Detect project info and write .android-env
   app-info           Print detected project/app metadata
   editor-setup NAME  Generate editor integration files
+  device ACTION      Manage the selected adb device serial
+  wireless ACTION    Pair/connect/manage wireless adb devices
   run                Build, install, and launch
   sync               Build and install only
   menu               Interactive menu for common actions
@@ -55,6 +57,11 @@ Examples:
   ${PROGRAM_NAME} setup
   ${PROGRAM_NAME} app-info
   ${PROGRAM_NAME} editor-setup vscode
+  ${PROGRAM_NAME} device use 2a8df356
+  ${PROGRAM_NAME} wireless pair --pair-host 192.168.1.10 --pair-port 37145 --pair-code 123456
+  ${PROGRAM_NAME} wireless doctor
+  ${PROGRAM_NAME} wireless connect --host 192.168.1.10 --port 41287
+  ${PROGRAM_NAME} wireless status
   ${PROGRAM_NAME} run
   ${PROGRAM_NAME} sync
   ${PROGRAM_NAME} menu
@@ -159,7 +166,7 @@ cmd_doctor() {
   if [[ -n "$adb_path" ]]; then
     local device_output
     printf '\n== Devices ==\n'
-    if device_output="$(adb_cmd devices 2>&1)"; then
+    if device_output="$(adb_global_cmd devices 2>&1)"; then
       printf '%s\n' "$device_output"
     else
       warn "adb probe failed"
@@ -185,10 +192,15 @@ _androidws_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local commands="init setup app-info editor-setup run sync menu completion doctor devices tasks build install launch logs clean apk-path"
+  local commands="init setup app-info editor-setup device wireless run sync menu completion doctor devices tasks build install launch logs clean apk-path"
   local global_opts="--project --module --variant --serial --adb-bin --env-file --app-id --activity -h --help"
   local path_opts="--project --adb-bin --env-file"
   local shell_opts="bash"
+  local device_actions="use current"
+  local wireless_actions="pair connect status doctor disconnect"
+  local wireless_pair_opts="--pair-host --pair-port --pair-code"
+  local wireless_connect_opts="--host --port"
+  local wireless_disconnect_opts="--serial"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "$commands $global_opts" -- "$cur") )
@@ -211,13 +223,24 @@ _androidws_completion() {
       COMPREPLY=( $(compgen -d -- "$cur") )
       return 0
       ;;
+    device)
+      COMPREPLY=( $(compgen -W "$device_actions $global_opts" -- "$cur") )
+      return 0
+      ;;
+    wireless)
+      COMPREPLY=( $(compgen -W "$wireless_actions $global_opts" -- "$cur") )
+      return 0
+      ;;
+    --pair-host|--host|--pair-port|--pair-code|--port)
+      return 0
+      ;;
   esac
 
   local command_seen=""
   local i
   for ((i = 1; i < COMP_CWORD; i++)); do
     case "${COMP_WORDS[i]}" in
-      init|setup|app-info|editor-setup|run|sync|menu|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
+      init|setup|app-info|editor-setup|device|wireless|run|sync|menu|completion|doctor|devices|tasks|build|install|launch|logs|clean|apk-path)
         command_seen="${COMP_WORDS[i]}"
         break
         ;;
@@ -230,6 +253,50 @@ _androidws_completion() {
       ;;
     editor-setup)
       COMPREPLY=( $(compgen -W "vscode $global_opts" -- "$cur") )
+      ;;
+    device)
+      if [[ $COMP_CWORD -eq $((i + 1)) ]]; then
+        COMPREPLY=( $(compgen -W "$device_actions $global_opts" -- "$cur") )
+        return 0
+      fi
+
+      local device_action="${COMP_WORDS[i+1]:-}"
+      case "$device_action" in
+        use)
+          COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+          ;;
+        current|"")
+          COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+          ;;
+        *)
+          COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+          ;;
+      esac
+      ;;
+    wireless)
+      if [[ $COMP_CWORD -eq $((i + 1)) ]]; then
+        COMPREPLY=( $(compgen -W "$wireless_actions $global_opts" -- "$cur") )
+        return 0
+      fi
+
+      local wireless_action="${COMP_WORDS[i+1]:-}"
+      case "$wireless_action" in
+        pair)
+          COMPREPLY=( $(compgen -W "$wireless_pair_opts $global_opts" -- "$cur") )
+          ;;
+        connect)
+          COMPREPLY=( $(compgen -W "$wireless_connect_opts $global_opts" -- "$cur") )
+          ;;
+        disconnect)
+          COMPREPLY=( $(compgen -W "$wireless_disconnect_opts $global_opts" -- "$cur") )
+          ;;
+        status|doctor|"")
+          COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+          ;;
+        *)
+          COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )
+          ;;
+      esac
       ;;
     completion)
       COMPREPLY=( $(compgen -W "$shell_opts $global_opts" -- "$cur") )
@@ -251,6 +318,401 @@ EOF
       ;;
     *)
       die "Unsupported completion shell: ${shell_name:-<empty>}. Supported: bash"
+      ;;
+  esac
+}
+
+device_usage() {
+  cat <<EOF
+Usage:
+  ${PROGRAM_NAME} [global-options] device use SERIAL
+  ${PROGRAM_NAME} [global-options] device current
+EOF
+}
+
+wireless_usage() {
+  cat <<EOF
+Usage:
+  ${PROGRAM_NAME} [global-options] wireless pair --pair-host HOST --pair-port PORT --pair-code CODE
+  ${PROGRAM_NAME} [global-options] wireless connect --host HOST --port PORT
+  ${PROGRAM_NAME} [global-options] wireless status
+  ${PROGRAM_NAME} [global-options] wireless doctor
+  ${PROGRAM_NAME} [global-options] wireless disconnect [--serial HOST:PORT]
+EOF
+}
+
+wireless_endpoint() {
+  local host="$1"
+  local port="$2"
+  printf '%s:%s\n' "$host" "$port"
+}
+
+verify_connected_serial() {
+  local serial="$1"
+  local attempt
+
+  for attempt in 1 2 3; do
+    if list_connected_device_serials | grep -Fx -- "$serial" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+persist_selected_serial() {
+  local serial="$1"
+  local env_path
+
+  env_path="$(project_env_file_path || true)"
+  if [[ -n "$env_path" && -f "$env_path" ]]; then
+    upsert_env_key "$env_path" "ADB_SERIAL" "$serial"
+    printf 'Persisted ADB_SERIAL in %s\n' "$env_path"
+    return
+  fi
+
+  warn "No project-local .android-env was found to persist ADB_SERIAL."
+  printf 'Next step: run %s setup in your project root, then rerun the device selection command if you want it saved.\n' "$PROGRAM_NAME"
+}
+
+clear_persisted_serial_if_matching() {
+  local serial="$1"
+  local env_path stored_serial
+
+  env_path="$(project_env_file_path || true)"
+  if [[ -z "$env_path" || ! -f "$env_path" ]]; then
+    return 0
+  fi
+
+  stored_serial="$(read_env_key_from_file "$env_path" "ADB_SERIAL" || true)"
+  if [[ "$stored_serial" == "$serial" ]]; then
+    clear_env_key "$env_path" "ADB_SERIAL"
+    printf 'Cleared persisted ADB_SERIAL in %s\n' "$env_path"
+  fi
+}
+
+serial_host() {
+  local serial="${1:-}"
+  printf '%s\n' "${serial%%:*}"
+}
+
+serial_port() {
+  local serial="${1:-}"
+  printf '%s\n' "${serial##*:}"
+}
+
+tcp_endpoint_reachable() {
+  local host="$1"
+  local port="$2"
+  local attempt
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$host" "$port" <<'PY'
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+
+try:
+    with socket.create_connection((host, port), timeout=2):
+        pass
+except OSError:
+    sys.exit(1)
+PY
+    return
+  fi
+
+  for attempt in 1 2 3; do
+    if command -v timeout >/dev/null 2>&1; then
+      if timeout 2 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$host" "$port" >/dev/null 2>&1; then
+        return 0
+      fi
+    else
+      if bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$host" "$port" >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+
+    sleep 1
+  done
+
+  return 1
+}
+
+print_serial_list() {
+  local label="$1"
+  local values="$2"
+
+  if [[ -n "$values" ]]; then
+    printf '%s=%s\n' "$label" "$values"
+  else
+    printf '%s=\n' "$label"
+  fi
+}
+
+cmd_device_use() {
+  local serial="${1:-}"
+
+  require_adb
+  [[ -n "$serial" ]] || die "device use requires a serial argument."
+
+  ADB_SERIAL="$serial"
+  printf 'Active adb serial: %s\n' "$ADB_SERIAL"
+  persist_selected_serial "$ADB_SERIAL"
+}
+
+cmd_device_current() {
+  local configured_serial connected_serials
+
+  require_adb
+  configured_serial="${ADB_SERIAL:-}"
+  connected_serials="$(list_connected_device_serials | paste -sd, - || true)"
+
+  printf 'configured_adb_serial=%s\n' "$configured_serial"
+  print_serial_list "connected_device_serials" "$connected_serials"
+}
+
+cmd_device() {
+  local action="${COMMAND_ARGS[0]:-}"
+
+  case "$action" in
+    use)
+      cmd_device_use "${COMMAND_ARGS[1]:-}"
+      ;;
+    current)
+      cmd_device_current
+      ;;
+    -h|--help|help|"")
+      device_usage
+      ;;
+    *)
+      die "Unknown device action: $action"
+      ;;
+  esac
+}
+
+cmd_wireless_pair() {
+  local pair_host="" pair_port="" pair_code="" endpoint output
+
+  while (($#)); do
+    case "$1" in
+      --pair-host)
+        pair_host="${2:-}"
+        shift 2
+        ;;
+      --pair-port)
+        pair_port="${2:-}"
+        shift 2
+        ;;
+      --pair-code)
+        pair_code="${2:-}"
+        shift 2
+        ;;
+      -h|--help)
+        wireless_usage
+        return 0
+        ;;
+      *)
+        die "Unknown wireless pair option: $1"
+        ;;
+    esac
+  done
+
+  require_adb
+  [[ -n "$pair_host" ]] || die "wireless pair requires --pair-host"
+  [[ -n "$pair_port" ]] || die "wireless pair requires --pair-port"
+  [[ -n "$pair_code" ]] || die "wireless pair requires --pair-code"
+
+  endpoint="$(wireless_endpoint "$pair_host" "$pair_port")"
+  if output="$(printf '%s\n' "$pair_code" | adb_global_cmd pair "$endpoint" 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
+cmd_wireless_connect() {
+  local host="" port="" endpoint output
+
+  while (($#)); do
+    case "$1" in
+      --host)
+        host="${2:-}"
+        shift 2
+        ;;
+      --port)
+        port="${2:-}"
+        shift 2
+        ;;
+      -h|--help)
+        wireless_usage
+        return 0
+        ;;
+      *)
+        die "Unknown wireless connect option: $1"
+        ;;
+    esac
+  done
+
+  require_adb
+  [[ -n "$host" ]] || die "wireless connect requires --host"
+  [[ -n "$port" ]] || die "wireless connect requires --port"
+
+  endpoint="$(wireless_endpoint "$host" "$port")"
+  output="$(adb_global_cmd connect "$endpoint" 2>&1)" || {
+    printf '%s\n' "$output" >&2
+    return 1
+  }
+  printf '%s\n' "$output"
+
+  if ! verify_connected_serial "$endpoint"; then
+    die "Wireless endpoint $endpoint is not listed as connected in adb devices."
+  fi
+
+  ADB_SERIAL="$endpoint"
+  printf 'Active wireless serial: %s\n' "$ADB_SERIAL"
+  persist_selected_serial "$ADB_SERIAL"
+}
+
+cmd_wireless_status() {
+  local configured_serial connected_serials
+
+  require_adb
+  configured_serial="${ADB_SERIAL:-}"
+  connected_serials="$(list_connected_wireless_serials | paste -sd, - || true)"
+
+  printf 'configured_adb_serial=%s\n' "$configured_serial"
+  if is_wireless_serial "$configured_serial"; then
+    printf 'configured_is_wireless=yes\n'
+  else
+    printf 'configured_is_wireless=no\n'
+  fi
+  printf 'connected_wireless_serials=%s\n' "$connected_serials"
+}
+
+cmd_wireless_doctor() {
+  local configured_serial connected_devices connected_wireless wireless_count
+  local host port
+
+  printf '== Wireless Doctor ==\n'
+
+  if ! find_adb >/dev/null 2>&1; then
+    printf 'status=missing-adb\n'
+    printf 'action=Install Android platform-tools or set ADB_BIN/ANDROID_SDK_ROOT so adb can be found.\n'
+    return 0
+  fi
+
+  configured_serial="${ADB_SERIAL:-}"
+  connected_devices="$(list_connected_device_serials | paste -sd, - || true)"
+  connected_wireless="$(list_connected_wireless_serials | paste -sd, - || true)"
+  wireless_count="$(list_connected_wireless_serials | sed '/^$/d' | wc -l)"
+
+  printf 'configured_adb_serial=%s\n' "$configured_serial"
+  print_serial_list "connected_device_serials" "$connected_devices"
+  print_serial_list "connected_wireless_serials" "$connected_wireless"
+
+  if [[ -z "$configured_serial" ]]; then
+    if [[ "$wireless_count" -gt 1 ]]; then
+      printf 'status=multiple-wireless-devices\n'
+      printf 'action=Choose one with %s device use HOST:PORT before running install/launch/logs.\n' "$PROGRAM_NAME"
+      return 0
+    fi
+
+    if [[ "$wireless_count" -eq 1 ]]; then
+      printf 'status=wireless-connected-not-selected\n'
+      printf 'action=Select the connected device with %s device use HOST:PORT.\n' "$PROGRAM_NAME"
+      return 0
+    fi
+
+    printf 'status=no-wireless-selection\n'
+    printf 'action=Pair with %s wireless pair ..., then connect with %s wireless connect ...\n' "$PROGRAM_NAME" "$PROGRAM_NAME"
+    return 0
+  fi
+
+  if ! is_wireless_serial "$configured_serial"; then
+    printf 'status=non-wireless-selection\n'
+    printf 'action=ADB_SERIAL is currently pinned to a USB/emulator serial. Use %s device use HOST:PORT or %s wireless connect ... to switch.\n' "$PROGRAM_NAME" "$PROGRAM_NAME"
+    return 0
+  fi
+
+  if list_connected_wireless_serials | grep -Fx -- "$configured_serial" >/dev/null 2>&1; then
+    printf 'status=ready\n'
+    printf 'action=Wireless device %s is connected and selected.\n' "$configured_serial"
+    return 0
+  fi
+
+  host="$(serial_host "$configured_serial")"
+  port="$(serial_port "$configured_serial")"
+  if tcp_endpoint_reachable "$host" "$port"; then
+    printf 'status=reachable-not-connected\n'
+    printf 'action=The wireless endpoint responds on the network but adb is not connected. Run %s wireless connect --host %s --port %s.\n' "$PROGRAM_NAME" "$host" "$port"
+    return 0
+  fi
+
+  printf 'status=unreachable-wireless-endpoint\n'
+  printf 'action=The configured endpoint %s cannot be reached. Common causes: the phone is not on the same Wi-Fi, Wireless debugging is off, or the debug port changed. Check the phone and reconnect with %s wireless connect.\n' "$configured_serial" "$PROGRAM_NAME"
+}
+
+cmd_wireless_disconnect() {
+  local serial="" endpoint output
+
+  while (($#)); do
+    case "$1" in
+      --serial)
+        serial="${2:-}"
+        shift 2
+        ;;
+      -h|--help)
+        wireless_usage
+        return 0
+        ;;
+      *)
+        die "Unknown wireless disconnect option: $1"
+        ;;
+    esac
+  done
+
+  require_adb
+  endpoint="${serial:-${ADB_SERIAL:-}}"
+  [[ -n "$endpoint" ]] || die "wireless disconnect requires --serial or a configured ADB_SERIAL."
+  is_wireless_serial "$endpoint" || die "wireless disconnect expects a HOST:PORT serial, got: $endpoint"
+
+  output="$(adb_global_cmd disconnect "$endpoint" 2>&1)" || {
+    printf '%s\n' "$output" >&2
+    return 1
+  }
+  printf '%s\n' "$output"
+  clear_persisted_serial_if_matching "$endpoint"
+}
+
+cmd_wireless() {
+  local action="${COMMAND_ARGS[0]:-}"
+
+  case "$action" in
+    pair)
+      cmd_wireless_pair "${COMMAND_ARGS[@]:1}"
+      ;;
+    connect)
+      cmd_wireless_connect "${COMMAND_ARGS[@]:1}"
+      ;;
+    status)
+      cmd_wireless_status "${COMMAND_ARGS[@]:1}"
+      ;;
+    doctor)
+      cmd_wireless_doctor "${COMMAND_ARGS[@]:1}"
+      ;;
+    disconnect)
+      cmd_wireless_disconnect "${COMMAND_ARGS[@]:1}"
+      ;;
+    -h|--help|help|"")
+      wireless_usage
+      ;;
+    *)
+      die "Unknown wireless action: $action"
       ;;
   esac
 }
@@ -305,6 +767,33 @@ write_vscode_tasks() {
   cat >"$tasks_file" <<'EOF'
 {
   "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "androidwsWirelessHost",
+      "type": "promptString",
+      "description": "Wireless debug host or IP"
+    },
+    {
+      "id": "androidwsWirelessPort",
+      "type": "promptString",
+      "description": "Wireless debug port"
+    },
+    {
+      "id": "androidwsPairHost",
+      "type": "promptString",
+      "description": "Wireless pairing host or IP"
+    },
+    {
+      "id": "androidwsPairPort",
+      "type": "promptString",
+      "description": "Wireless pairing port"
+    },
+    {
+      "id": "androidwsPairCode",
+      "type": "promptString",
+      "description": "Wireless pairing code"
+    }
+  ],
   "tasks": [
     {
       "label": "androidws: app-info",
@@ -352,6 +841,62 @@ write_vscode_tasks() {
       "label": "androidws: devices",
       "type": "shell",
       "command": "androidws devices",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: wireless doctor",
+      "type": "shell",
+      "command": "androidws wireless doctor",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: wireless status",
+      "type": "shell",
+      "command": "androidws wireless status",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: wireless pair",
+      "type": "shell",
+      "command": "androidws wireless pair --pair-host ${input:androidwsPairHost} --pair-port ${input:androidwsPairPort} --pair-code ${input:androidwsPairCode}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "androidws: wireless connect",
+      "type": "shell",
+      "command": "androidws wireless connect --host ${input:androidwsWirelessHost} --port ${input:androidwsWirelessPort}",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -437,6 +982,15 @@ write_vscode_tasks() {
       "problemMatcher": []
     },
     {
+      "label": "androidws: wireless run",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "androidws: wireless connect",
+        "androidws: run"
+      ],
+      "problemMatcher": []
+    },
+    {
       "label": "androidws: logs",
       "type": "shell",
       "command": "androidws logs",
@@ -477,11 +1031,16 @@ cmd_editor_setup() {
       printf '  - androidws: setup\n'
       printf '  - androidws: doctor\n'
       printf '  - androidws: devices\n'
+      printf '  - androidws: wireless doctor\n'
+      printf '  - androidws: wireless status\n'
+      printf '  - androidws: wireless pair\n'
+      printf '  - androidws: wireless connect\n'
       printf '  - androidws: build\n'
       printf '  - androidws: install\n'
       printf '  - androidws: launch\n'
       printf '  - androidws: sync\n'
       printf '  - androidws: run\n'
+      printf '  - androidws: wireless run\n'
       printf '  - androidws: logs\n'
       ;;
     "")
@@ -494,27 +1053,27 @@ cmd_editor_setup() {
 }
 
 cmd_setup() {
-  local module app_id activity serial env_path
+  local module app_id activity serial env_path generated_date
 
   ensure_project
   module="$(detect_app_module || true)"
   app_id="$(detect_application_id "$module" || true)"
   activity="$(detect_launcher_activity "$module" || true)"
   serial="$(detect_connected_device_serial || true)"
-  env_path="$PROJECT_DIR/.android-env"
+  env_path="$(project_env_file_path)"
+  generated_date="$(date +%F)"
 
-  cat >"$env_path" <<EOF
-# Generated by androidws setup on 2026-04-01
-# Review these values if your project uses flavors, suffixes, or multiple apps.
-
-PROJECT_DIR=$PROJECT_DIR
-APP_MODULE=${module:-app}
-BUILD_VARIANT=${BUILD_VARIANT:-Debug}
-ADB_SERIAL=${serial:-}
-ADB_BIN=${ADB_BIN:-}
-APP_ID=${app_id:-}
-LAUNCH_ACTIVITY=${activity:-}
-EOF
+  {
+    printf '# Generated by androidws setup on %s\n' "$generated_date"
+    printf '# Review these values if your project uses flavors, suffixes, or multiple apps.\n\n'
+    env_assignment_line "PROJECT_DIR" "$PROJECT_DIR"
+    env_assignment_line "APP_MODULE" "${module:-app}"
+    env_assignment_line "BUILD_VARIANT" "${BUILD_VARIANT:-Debug}"
+    env_assignment_line "ADB_SERIAL" "${serial:-}"
+    env_assignment_line "ADB_BIN" "${ADB_BIN:-}"
+    env_assignment_line "APP_ID" "${app_id:-}"
+    env_assignment_line "LAUNCH_ACTIVITY" "${activity:-}"
+  } >"$env_path"
 
   printf 'Wrote %s\n\n' "$env_path"
   print_detected_app_info
@@ -527,7 +1086,7 @@ EOF
 
 cmd_devices() {
   require_adb
-  adb_cmd devices
+  adb_global_cmd devices
 }
 
 cmd_tasks() {
@@ -611,6 +1170,8 @@ case "$COMMAND" in
   setup) cmd_setup ;;
   app-info) cmd_app_info ;;
   editor-setup) cmd_editor_setup ;;
+  device) cmd_device ;;
+  wireless) cmd_wireless ;;
   run) cmd_run ;;
   sync) cmd_sync ;;
   menu) cmd_menu ;;
